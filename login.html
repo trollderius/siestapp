@@ -1,0 +1,99 @@
+
+<script type="text/javascript" src="libs/requirejs/require.js"></script>   
+
+<script>
+
+    require([
+        "https://www.gstatic.com/firebasejs/4.1.3/firebase.js"
+    ], function () {
+
+        // Initialize Firebase
+        var config = {
+            apiKey: "AIzaSyA-lgrUFtfaqNBWFgfrazlzSRyS0oGmiY4",
+            authDomain: "siestapp-bde94.firebaseapp.com",
+            databaseURL: "https://siestapp-bde94.firebaseio.com",
+            projectId: "siestapp-bde94",
+            storageBucket: "siestapp-bde94.appspot.com",
+            messagingSenderId: "154305950341"
+        };
+        firebase.initializeApp(config);
+
+        //LOGIN    
+        var provider = new firebase.auth.GoogleAuthProvider();
+
+        firebase.auth().onAuthStateChanged(function (userData) {
+            //console.log(user);
+            //CHECK IF LOGGED
+            if (userData) {
+                new User(userData);
+                return;
+            }
+
+            //firebase.auth().getRedirectResult().then(function (result) { //NOT WORKING???
+            firebase.auth().signInWithPopup(provider).then(function (result) {
+                //console.log(result);
+                var userData = result.user;
+                new User(userData);
+
+                //UPDATE DATABASE USER
+                firebase.database().ref('users/' + userData.uid).set({
+                    username: userData.displayName,
+                    profile_picture: userData.photoURL
+                });
+
+            }).catch(function (error) {
+                console.log(error);
+            });
+        });
+    });
+
+    var User = function (userData) {
+        //console.log(userData);
+
+        this.db = firebase.database();
+        this.id = userData.uid;
+        this.name = userData.displayName;
+        this.photoURL = userData.photoURL;
+
+        this.getUserData();
+        window.user = this;
+    };
+
+    //https://firebase.google.com/docs/database/web/read-and-write
+    User.prototype.getUserData = function () {
+        //var ref = firebase.database().ref('users/' + this.id);
+        var ref = firebase.database().ref('users');
+        ref.once("value").then(function (snapshot) {
+            var users = snapshot.val();
+            console.log("all:");
+            console.log(users);
+
+            for (var user in users) {
+                var markers = users[user].markers;
+                for (var key in markers) {
+                    var marker = markers[key];
+                    window.map.insertMarker(key, marker);
+                }
+            }
+        });
+    };
+
+    User.prototype.insertMarker = function (data) {
+        data.user = this.name;
+        console.log(data);
+        var ref = this.db.ref('users/' + this.id + '/markers').push(data);
+        return ref.key;
+    };
+
+    User.prototype.updateMarker = function (key, pos) {
+        this.db.ref('users/' + this.id + "/markers/" + key).set({
+            pos: pos
+        });
+    };
+
+    User.prototype.removeMarker = function (key) {
+        var ref = this.db.ref('users/' + this.id + "/markers/" + key);
+        ref.remove();
+    };
+
+</script>

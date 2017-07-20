@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Siestapp</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <style>
+            html, body{
+                width: 100%;
+                height: 100%;
+                margin: 0;
+            }
+            #map{
+                width: 100%;
+                height: 100%;
+            }
+            #addButton, #removeButton{
+                position: absolute;
+                bottom: 0;
+                left: 0;
+            }
+
+            #ask{
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: rgba(0,0,0,0.5);                
+            }
+            #ask > div{
+                position: absolute;
+                margin: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(255,255,255,0.7); 
+                text-align: center;
+                padding: 20px;
+                line-height: 30px;
+                min-width: 50%;
+                border: 1px solid rgb(50,50,50);
+            }
+            button{
+                margin: 10px;
+                padding: 10px;
+                min-width: 70px;
+                font-weight: bold;
+            }
+            input{
+                line-height: 30px;
+                width: 100%;
+            }
+        </style>
+        <script type="text/javascript" src="libs/jquery-1.11.0.min.js"></script>   
+    </head>
+    <body>
+        <div id="map"></div>
+
+        <script>
+
+            function initMap() {
+                navigator.geolocation.getCurrentPosition(function (position) {
+                    window.map = new Map(position);
+                });
+            }
+
+            var Map = function (position) {
+                this.pos = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                };
+
+                this.map = new google.maps.Map(document.getElementById('map'), {
+                    zoom: 18,
+                    center: this.pos
+                });
+
+                this.interface();
+            };
+
+            Map.prototype.interface = function () {
+                var _this = this;
+                //ADD EVENT
+                $("<button id='addButton'>").text("Add").appendTo("body").click(function () {
+                    
+                    var htmlAsk = "What about this place for a siesta?"
+                            + "<div style='text-align:left'>"
+                            + "<div>Ground: <input class='ground' placeholder='grass, wood, concrete..'></div>"
+                            + "<div>Sunning: <input class='sunning' placeholder='shadow, sun..'></div>"
+                            + "<div>Noise: <input class='noise' placeholder='hight, medium, silence..'></div>"
+                            + "</div>";
+                    
+                    _this.ask(htmlAsk, function () {
+                        var data = {};
+                        var $ask = $("#ask");
+
+                        var ground = $ask.find(".ground").val();
+                        var sunning = $ask.find(".sunning").val();
+                        var noise = $ask.find(".noise").val();
+
+                        if (ground) {
+                            data.ground = ground;
+                        }
+                        if (sunning) {
+                            data.sunning = sunning;
+                        }
+                        if (noise) {
+                            data.noise = noise;
+                        }
+
+                        var pos = _this.map.getCenter();
+                        data.pos = {
+                            lat: pos.lat(),
+                            lng: pos.lng()
+                        };
+                        console.log(data.pos);
+                        var key = window.user.insertMarker(data);
+                        _this.insertMarker(key, data);
+                    });
+                });
+
+                //REMOVE EVENT
+                $("<button id='removeButton' style='display:none'>").text("Remove").appendTo("body").click(function () {
+                    _this.select.setMap(null);
+                    window.user.removeMarker(_this.select.key);
+
+                    $("#addButton").show();
+                    $("#removeButton").hide();
+                });
+            };
+
+            Map.prototype.insertMarker = function (key, markerData) {
+                var _this = this;
+
+                var marker = new google.maps.Marker({
+                    position: markerData.pos,
+                    map: this.map,
+                    draggable: true
+                });
+                marker.key = key;
+
+                //http://dominoc925.blogspot.cl/2012/06/stop-click-event-from-propagating-from.html
+                google.maps.event.addListener(marker, "click", function () {
+                    _this.select = marker;
+                    $("#addButton").hide();
+                    $("#removeButton").show();
+
+                    var content = "<u>Place info:</u>";
+                    if (markerData.ground) {
+                        content += "<br>Ground: " + markerData.ground;
+                    }
+                    if (markerData.sunning) {
+                        content += "<br>Sunning: " + markerData.sunning;
+                    }
+                    if (markerData.noise) {
+                        content += "<br>Noise: " + markerData.noise;
+                    }
+                    if (markerData.user) {
+                        content += "<br><small>by " + markerData.user + "</small>";
+                    }
+                    if (!content) {
+                        content = "unknown";
+                    }
+                    
+                    if(_this.infowindow){
+                        _this.infowindow.close();
+                    }                    
+                    _this.infowindow = new google.maps.InfoWindow({content: content});
+                    _this.infowindow.open(this.map, marker);
+
+                    //CLOSE
+                    google.maps.event.addListener(_this.infowindow, 'closeclick', function () {
+                        console.log("closeclick");
+                        _this.select = null;
+                        $("#addButton").show();
+                        $("#removeButton").hide();
+                    });
+                });
+
+                //https://stackoverflow.com/questions/5688745/google-maps-v3-draggable-marker
+                google.maps.event.addListener(marker, 'dragend', function () {
+                    _this.ask("Update position?", function () {
+                        //ok
+                        var pos = marker.getPosition();
+                        window.user.updateMarker(key, {
+                            lat: pos.lat(),
+                            lng: pos.lng()
+                        });
+                    }, function () {
+                        //cancel
+                        var latlng = new google.maps.LatLng(markerData.pos.lat, markerData.pos.lng);
+                        marker.setPosition(latlng);
+                    });
+                });
+            };
+
+            Map.prototype.ask = function (text, okCallback, cancelCallback) {
+                var background = $("<div id='ask'>").appendTo("body");
+                var dialog = $("<div>").appendTo(background);
+                $("<div>").html(text).appendTo(dialog);
+
+                $("<button>").text("ok").appendTo(dialog).click(function () {
+                    okCallback();
+                    background.remove();
+                });
+
+                if (false !== cancelCallback) {
+                    $("<button>").text("no").appendTo(dialog).click(function () {
+                        if (cancelCallback) {
+                            cancelCallback();
+                        }
+                        background.remove();
+                    });
+                }
+            };
+
+            //LOGIN INSERT
+            $("<div id='login'>").appendTo("body").load("login.html", function () {
+                console.log("login loaded");
+            });
+
+        </script>
+
+        <script async defer
+                src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDi38rxqy4svaQaogyDHxc96vFjuzN9ubc&callback=initMap">
+        </script>
+    </body>
+</html>
